@@ -275,8 +275,8 @@ func selectRelease(releases []release, current string) (*candidate, error) {
 
 func archiveName(version, goos, goarch string) (string, error) {
 	switch {
-	case goos == "darwin" && goarch == "arm64":
-		return "Cage-" + version + "-macos-arm64.dmg", nil
+	case goos == "darwin" && (goarch == "arm64" || goarch == "amd64"):
+		return "Cage-" + version + "-macos-" + goarch + ".dmg", nil
 	case goos == "windows" && goarch == "amd64":
 		return "Cage-" + version + "-windows-amd64-setup.exe", nil
 	default:

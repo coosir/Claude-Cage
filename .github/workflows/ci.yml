@@ -45,6 +45,58 @@ jobs:
       ref: ${{ github.sha }}
       release: false
       artifact_name: cage-macos-arm64-test
+  macos-intel:
+    needs: workflow-checks
+    runs-on: macos-15-intel
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@v10.3.3
+      - name: Build the Intel application with Linux guest assets
+        env:
+          CAGE_SIGNING_IDENTITY: '-'
+        run: |
+          [[ "$(uname -m)" == x86_64 ]]
+          bash scripts/build-app.sh
+      - name: Test platform selection, workbench and native updater
+        run: |
+          make test-go
+          npm --prefix ui run lint
+          npm --prefix ui test
+          bash scripts/test-app-updates.sh
+          node scripts/agent-cli-smoke.mjs "$PWD/_output/Cage.app/Contents/Resources/cage"
+      - name: Verify and archive the Intel application
+        # Hosted runners cannot boot nested VZ guests; host readiness is tested on a physical Mac.
+        run: |
+          codesign --verify --deep --strict _output/Cage.app
+          for executable in Contents/MacOS/Cage Contents/Resources/cage Contents/Resources/mihomo Contents/Resources/CageUpdateInstaller; do
+            lipo "_output/Cage.app/$executable" -verify_arch x86_64
+          done
+          version=$(tr -d '\r\n' < VERSION)
+          mkdir -p _output/ci-macos-intel-test
+          tar -czf "_output/ci-macos-intel-test/Cage-$version-macos-amd64-test.tar.gz" -C _output Cage.app
+          (cd _output/ci-macos-intel-test && shasum -a 256 *.tar.gz > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cage-macos-amd64-test
+          path: _output/ci-macos-intel-test/
+          if-no-files-found: error
   windows-updates:
     needs: workflow-checks
     strategy:

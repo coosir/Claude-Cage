@@ -47,6 +47,42 @@ func newTestLima(t *testing.T) *Lima {
 	return l
 }
 
+func TestIntelMacLinuxVZ(t *testing.T) {
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "amd64" {
+		t.Skip("Intel macOS VZ configuration")
+	}
+	l := newTestLima(t)
+	config := filepath.Join(t.TempDir(), "config.json")
+	data, err := json.Marshal(cage.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(cage.ConfigEnv, config)
+	none := []Mount{}
+	if err := l.Create(t.Context(), "base", "template:debian-13", Settings{CPUs: 1, MemoryGiB: 2, DiskGiB: 10, Mounts: &none, NoContainerd: true}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	inst, err := l.inspect(t.Context(), "base")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inst.VMType != limatype.VZ || inst.Arch != limatype.X8664 || *inst.Config.OS != limatype.LINUX {
+		t.Fatalf("expected native x86_64 Linux/VZ: %+v", inst)
+	}
+	if err := NetworkConfined(inst.Config); err != nil {
+		t.Fatal(err)
+	}
+	if err := Confined(fromLima(inst)); err != nil {
+		t.Fatal(err)
+	}
+	if inst.Config.PropagateProxyEnv == nil || *inst.Config.PropagateProxyEnv {
+		t.Fatal("host proxy environment leaked into the Linux guest")
+	}
+}
+
 func TestCageDebianMirrors(t *testing.T) {
 	l := newTestLima(t)
 	config := filepath.Join(t.TempDir(), "config.json")

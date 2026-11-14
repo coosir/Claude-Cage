@@ -2,6 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ "$(uname -s)" != Darwin ]]; then echo 'Cage.app must be built on macOS.' >&2; exit 1; fi
+case "$(uname -m)" in
+  arm64) minimum_macos=14.0 ;;
+  x86_64) minimum_macos=15.5 ;;
+  *) echo 'Cage supports Apple Silicon and Intel x86_64 Macs.' >&2; exit 1 ;;
+esac
 case "${1:-}" in ''|--install|--macos-trial|--install-macos-trial) ;; *) echo 'Usage: scripts/build-app.sh [--install|--macos-trial|--install-macos-trial]' >&2; exit 2 ;; esac
 bundle_id=io.github.lee-xeo.claude-cage
 app_name=Cage
@@ -39,9 +44,9 @@ identity="${CAGE_SIGNING_IDENTITY:--}"
 export CAGE_SIGNING_IDENTITY="$identity"
 # The host SDK may default to the developer's newer macOS version. Set the
 # deployment target for the Go/cgo helper as well as the Swift launcher.
-export MACOSX_DEPLOYMENT_TARGET=14.0
-export CGO_CFLAGS="${CGO_CFLAGS:-} -mmacosx-version-min=14.0"
-export CGO_LDFLAGS="${CGO_LDFLAGS:-} -mmacosx-version-min=14.0"
+export MACOSX_DEPLOYMENT_TARGET="$minimum_macos"
+export CGO_CFLAGS="${CGO_CFLAGS:-} -mmacosx-version-min=$minimum_macos"
+export CGO_LDFLAGS="${CGO_LDFLAGS:-} -mmacosx-version-min=$minimum_macos"
 bash scripts/fetch-proxy-core.sh
 if [[ "$(uname -m)" == arm64 ]]; then
   bash scripts/guest-os/build-macos-guest-core.sh "$version"
@@ -54,8 +59,8 @@ install_stage=''
 trap 'rm -rf "$build_stage"; if [[ -n "$install_stage" ]]; then rm -rf "$install_stage"; fi' EXIT
 bundle="$build_stage/Cage.app"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
-swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library -framework Cocoa -framework WebKit -framework Security -framework LocalAuthentication desktop/Cage.swift desktop/MacKeyboard.swift desktop/NativeInput.swift desktop/Updates.swift desktop/AccountDevice.swift desktop/MacGuestLogin.swift -o "$bundle/Contents/MacOS/Cage"
-swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library -framework Cocoa -framework Security desktop/Updates.swift desktop/UpdateInstaller.swift -o "$bundle/Contents/Resources/CageUpdateInstaller"
+swiftc -O -target "$(uname -m)-apple-macosx$minimum_macos" -parse-as-library -framework Cocoa -framework WebKit -framework Security -framework LocalAuthentication desktop/Cage.swift desktop/MacKeyboard.swift desktop/NativeInput.swift desktop/Updates.swift desktop/AccountDevice.swift desktop/MacGuestLogin.swift -o "$bundle/Contents/MacOS/Cage"
+swiftc -O -target "$(uname -m)-apple-macosx$minimum_macos" -parse-as-library -framework Cocoa -framework Security desktop/Updates.swift desktop/UpdateInstaller.swift -o "$bundle/Contents/Resources/CageUpdateInstaller"
 cp _output/bin/cage "$bundle/Contents/Resources/cage"
 if [[ "$(uname -m)" == arm64 ]]; then "$bundle/Contents/Resources/cage" verify-macos-guest; fi
 if [[ "$(uname -m)" == arm64 ]]; then
@@ -70,10 +75,11 @@ node scripts/bundle-cloud-kit.mjs "$bundle/Contents/Resources"
 cp _output/proxy-core/mihomo "$bundle/Contents/Resources/mihomo"
 for executable in "$bundle/Contents/MacOS/Cage" "$bundle/Contents/Resources/CageUpdateInstaller" "$bundle/Contents/Resources/cage" "$bundle/Contents/Resources/mihomo"; do
   minimum="$(otool -l "$executable" | awk '$1 == "minos" {print $2}')"
-  if [[ -z "$minimum" ]] || ! awk -v version="$minimum" 'BEGIN {split(version,v,"."); exit !(v[1] < 14 || (v[1] == 14 && v[2] == 0 && v[3]+0 == 0))}'; then
-    printf 'Unsupported deployment target %s in %s (expected macOS 14.0 or earlier).\n' "$minimum" "$executable" >&2
+  if [[ -z "$minimum" ]] || ! awk -v version="$minimum" -v target="$minimum_macos" 'BEGIN {split(version,v,"."); split(target,t,"."); exit !(v[1] < t[1] || (v[1] == t[1] && (v[2] < t[2] || (v[2] == t[2] && v[3]+0 == 0))))}'; then
+    printf 'Unsupported deployment target %s in %s (expected macOS %s or earlier).\n' "$minimum" "$executable" "$minimum_macos" >&2
     exit 1
   fi
+  lipo "$executable" -verify_arch "$(uname -m)"
 done
 mkdir -p "$bundle/Contents/Resources/licenses/mihomo"
 cp _output/proxy-core/LICENSE _output/proxy-core/NOTICE "$bundle/Contents/Resources/licenses/mihomo/"
@@ -93,7 +99,7 @@ cat > "$bundle/Contents/Info.plist" <<PLIST
 <key>CFBundleExecutable</key><string>Cage</string>
 <key>CFBundleIconFile</key><string>Cage</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>LSMinimumSystemVersion</key><string>$minimum_macos</string>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>

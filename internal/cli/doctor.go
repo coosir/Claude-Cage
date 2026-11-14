@@ -15,6 +15,7 @@ import (
 
 	limaversion "github.com/lima-vm/lima/v2/pkg/version"
 
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/env"
 	"github.com/sylvinus/agent-vm/internal/gitguard"
 	"github.com/sylvinus/agent-vm/internal/guard"
@@ -112,6 +113,15 @@ func (e *app) doctorCmd(ctx context.Context, args []string) int {
 	}
 	var prereqs bytes.Buffer
 	switch runtime.GOOS {
+	case "darwin":
+		if os.Getenv(cage.ConfigEnv) == "" {
+			break
+		}
+		if host.MacOSPrereqs(&prereqs) {
+			d.line("ok", "macOS VZ host prerequisites are satisfied")
+		} else {
+			d.line("fail", "macOS VZ host is not usable", strings.Split(strings.TrimSuffix(prereqs.String(), "\n"), "\n")...)
+		}
 	case "linux":
 		if host.LinuxPrereqs(&prereqs) {
 			d.line("ok", "QEMU and /dev/kvm are usable")

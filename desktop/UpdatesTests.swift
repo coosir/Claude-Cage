@@ -65,6 +65,18 @@ enum UpdatesTests {
         // Exercise the production lipo invocation against a real Mach-O binary.
         // lipo consumes every argument after -verify_arch as an architecture.
         try CageUpdateFiles.verifyArchitecture(URL(fileURLWithPath: CommandLine.arguments[0]))
+        let architectureSource = root.appendingPathComponent("architecture.c")
+        let foreignExecutable = root.appendingPathComponent("foreign-executable")
+        try Data("int main(void) { return 0; }\n".utf8).write(to: architectureSource)
+        #if arch(x86_64)
+        let foreignArchitecture = "arm64"
+        #else
+        let foreignArchitecture = "x86_64"
+        #endif
+        _ = try CageUpdateFiles.run("/usr/bin/xcrun", ["clang", "-arch", foreignArchitecture, architectureSource.path, "-o", foreignExecutable.path])
+        try rejects("update executable for the other Mac architecture refused") {
+            try CageUpdateFiles.verifyArchitecture(foreignExecutable)
+        }
         let hashFile = root.appendingPathComponent("content")
         try CageUpdateFiles.write(Data("abc".utf8), to: hashFile)
         try rejects("non-Mach-O executable refused") { try CageUpdateFiles.verifyArchitecture(hashFile) }

@@ -214,7 +214,7 @@ func (e *app) setupCmd(ctx context.Context, args []string) int {
 	}
 
 	fmt.Fprintln(e.io.Stdout, "Starting agent-vm setup...")
-	if !skipPrereqs && (!host.LinuxPrereqs(e.io.Stderr) || !host.WindowsPrereqs(e.io.Stdout, e.io.Stderr)) {
+	if !skipPrereqs && ((os.Getenv(cage.ConfigEnv) != "" && !host.MacOSPrereqs(e.io.Stderr)) || !host.LinuxPrereqs(e.io.Stderr) || !host.WindowsPrereqs(e.io.Stdout, e.io.Stderr)) {
 		return 1
 	}
 	if !preinstallSeen && e.ui.CanAsk() {

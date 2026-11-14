@@ -60,6 +60,10 @@ func (s *Server) guestInstallView() (guestInstallView, error) {
 	switch {
 	case runtime.GOOS == "darwin" && runtime.GOARCH == "arm64":
 		v.System = guestos.MacOS
+	case runtime.GOOS == "darwin" && runtime.GOARCH == "amd64":
+		// Intel Macs use Linux guests. Leave System empty so the picker
+		// does not offer cloning the host's unsupported macOS guest.
+		v.Reason = "Intel Mac 支持 Debian 13 和 Ubuntu 22.04 客机，不支持 macOS 客机或自动匹配本机系统。"
 	case runtime.GOOS == "windows" && runtime.GOARCH == "amd64":
 		v.System = guestos.Windows11
 	case runtime.GOOS == "linux" && runtime.GOARCH == "amd64":

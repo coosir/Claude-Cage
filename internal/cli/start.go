@@ -644,7 +644,7 @@ func (s *start) boot() error {
 	}
 	// Existing environments also require KVM. Otherwise Lima silently falls
 	// back to software emulation after a host loses virtualization support.
-	if !skipPrereqs && !host.LinuxPrereqs(s.io.Stderr) {
+	if !skipPrereqs && ((os.Getenv(cage.ConfigEnv) != "" && !host.MacOSPrereqs(s.io.Stderr)) || !host.LinuxPrereqs(s.io.Stderr)) {
 		return errStop
 	}
 	// Windows: QEMU's folder on PATH (winget does not put it there), for the

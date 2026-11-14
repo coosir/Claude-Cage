@@ -38,6 +38,11 @@ func newBox(t *testing.T) *box {
 		os.MkdirAll(d, 0o755)
 	}
 	b.git(b.proj, "init", "-q")
+	// Git installations without template files do not create this directory.
+	// The hook fixtures below must not depend on the host's Git packaging.
+	if err := os.MkdirAll(b.proj+"/.git/hooks", 0o755); err != nil {
+		t.Fatal(err)
+	}
 	return b
 }
 

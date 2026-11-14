@@ -21,11 +21,37 @@ func TestUbuntuGuestChoicesMatchSupportedHostArchitectures(t *testing.T) {
 		available      bool
 	}{
 		{"darwin", "arm64", true}, {"windows", "amd64", true}, {"linux", "amd64", true},
-		{"darwin", "amd64", false}, {"windows", "arm64", false}, {"linux", "arm64", false},
+		{"darwin", "amd64", true}, {"windows", "arm64", false}, {"linux", "arm64", false},
 	} {
 		if got := linuxGuestSystems(host.platform, host.arch); (len(got) == 1 && got[0] == guestos.Ubuntu2204) != host.available {
 			t.Fatalf("%s/%s: %v", host.platform, host.arch, got)
 		}
+	}
+}
+
+func TestIntelMacGuestInstallerKeepsLinuxResumeAndDisablesMacClone(t *testing.T) {
+	if runtime.GOOS != "darwin" || runtime.GOARCH != "amd64" {
+		t.Skip("Intel macOS installer")
+	}
+	s := testServer(t)
+	view, err := s.guestInstallView()
+	if err != nil || !view.Fresh || view.System != "" || view.Available || len(view.LinuxSystems) != 1 {
+		t.Fatalf("Intel guest choices: %+v %v", view, err)
+	}
+	// Even a direct API request must not try to clone Intel macOS.
+	w := request(s, http.MethodGet, "/api/environment/guest-systems/clone", s.origin, "", true)
+	if w.Code == http.StatusOK {
+		t.Fatal("Intel macOS host clone was offered")
+	}
+	plan, err := linuxGuestImagePlan(t.Context(), s.profile, guestos.Ubuntu2204, "arm64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := guestos.SaveInstallation(s.profile, guestos.Installation{Version: 1, ID: uuid.New(), System: guestos.Ubuntu2204, Source: plan, SourceKind: guestos.LinuxImageSource}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.guestInstallView(); err == nil {
+		t.Fatal("resumed an ARM Linux image on an Intel Mac")
 	}
 }
 

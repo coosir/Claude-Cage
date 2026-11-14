@@ -174,7 +174,12 @@ enum CageUpdateFiles {
         return actual
     }
     static func verifyArchitecture(_ executable: URL, validation: CageUpdateValidation? = nil) throws {
-        _ = try run("/usr/bin/lipo", [executable.path, "-verify_arch", "arm64"], validation: validation)
+        #if arch(x86_64)
+        let architecture = "x86_64"
+        #else
+        let architecture = "arm64"
+        #endif
+        _ = try run("/usr/bin/lipo", [executable.path, "-verify_arch", architecture], validation: validation)
     }
     static func verifyApp(_ url: URL, version: String, team: String, gatekeeper: Bool = true, validation: CageUpdateValidation? = nil) throws {
         try validation?.checkCancellation()

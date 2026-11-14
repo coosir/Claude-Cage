@@ -14,24 +14,31 @@ validate_ticket() {
   done
 }
 shopt -s nullglob
-archives=("$directory"/Cage-*-macos-arm64.dmg)
+archives=("$directory"/Cage-*-macos-arm64.dmg "$directory"/Cage-*-macos-amd64.dmg)
 if [[ ${#archives[@]} != 1 ]]; then echo 'Expected exactly one Cage DMG.' >&2; exit 1; fi
 sources=("$directory"/mihomo-v*-source.tar.gz)
 if [[ ${#sources[@]} != 1 ]]; then echo 'Expected exactly one Mihomo source archive.' >&2; exit 1; fi
 archive="${archives[0]}"
 version="${archive##*/Cage-}"
-version="${version%-macos-arm64.dmg}"
+case "$version" in
+  *-macos-arm64.dmg) architecture=arm64; version="${version%-macos-arm64.dmg}" ;;
+  *-macos-amd64.dmg) architecture=x86_64; version="${version%-macos-amd64.dmg}" ;;
+esac
 guest_source="$directory/cage-macos-guest-$version-source.tar.gz"
-[[ -f "$guest_source" ]] || { echo 'Expected the matching macOS guest corresponding source archive.' >&2; exit 1; }
+guest_required=0
+if [[ "$architecture" == arm64 ]]; then
+  guest_required=1
+  [[ -f "$guest_source" ]] || { echo 'Expected the matching macOS guest corresponding source archive.' >&2; exit 1; }
+fi
 # The release may also contain Windows installers and their corresponding
 # sources. Validate this platform's downloaded files against the original list.
 checksum_input="$(mktemp)"
 trap 'rm -f "$checksum_input"' EXIT
-awk -v archive="${archive##*/}" -v source="${sources[0]##*/}" -v guest="${guest_source##*/}" '
+awk -v archive="${archive##*/}" -v source="${sources[0]##*/}" -v guest="${guest_source##*/}" -v guest_required="$guest_required" '
   NF == 2 && ($2 == archive || $2 == "*" archive) { archives++; print }
   NF == 2 && ($2 == source || $2 == "*" source) { sources++; print }
-  NF == 2 && ($2 == guest || $2 == "*" guest) { guests++; print }
-  END { if (archives != 1 || sources != 1 || guests != 1) exit 1 }
+  NF == 2 && guest_required && ($2 == guest || $2 == "*" guest) { guests++; print }
+  END { if (archives != 1 || sources != 1 || guests != guest_required) exit 1 }
 ' "$directory/SHA256SUMS" > "$checksum_input"
 (cd "$directory" && shasum -a 256 --check "$checksum_input")
 rm -f "$checksum_input"
@@ -49,8 +56,13 @@ codesign --verify --deep --strict --verbose=2 \
   -R='anchor apple generic and identifier "io.github.lee-xeo.claude-cage" and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "$bundle"
 validate_ticket "$bundle"
 spctl --assess --type execute --verbose=2 "$bundle"
-cmp "$guest_source" "$bundle/Contents/Resources/guest-os/sources/${guest_source##*/}"
-script_dir="$(cd "$(dirname "$0")" && pwd)"
-node "$script_dir/guest-os/collect-macos-sshfs-sources.mjs" verify "$guest_source" \
-  "$bundle/Contents/Resources/guest-os/project/cage-sshfs" "$version"
+for executable in Contents/MacOS/Cage Contents/Resources/cage Contents/Resources/mihomo Contents/Resources/CageUpdateInstaller; do
+  lipo "$bundle/$executable" -verify_arch "$architecture"
+done
+if [[ "$guest_required" == 1 ]]; then
+  cmp "$guest_source" "$bundle/Contents/Resources/guest-os/sources/${guest_source##*/}"
+  script_dir="$(cd "$(dirname "$0")" && pwd)"
+  node "$script_dir/guest-os/collect-macos-sshfs-sources.mjs" verify "$guest_source" \
+    "$bundle/Contents/Resources/guest-os/project/cage-sshfs" "$version"
+fi
 echo "Verified Developer ID, notarization, Gatekeeper, version and corresponding source: Cage $version"
